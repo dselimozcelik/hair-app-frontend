@@ -4,7 +4,6 @@ import { loadImageFromFile } from "../core/imageLoader";
 import { fitContain } from "../core/viewport";
 import { sizeCanvases, drawBaseImage, resetMask, clearAll, syncViewFromMask } from "../core/canvasPair";
 import type { CanvasPair } from "../core/canvasPair";
-import { drawOnView, drawOnMask } from "../core/drawEngine";
 import { HistoryStack } from "../core/history";
 import { downloadMask, createMaskFromView } from "../core/exporter";
 import type { BrushMode, Viewport } from "../types";
@@ -28,6 +27,8 @@ export function useCanvasController() {
     const isDrawing = useRef(false);
     const lastPt = useRef<Point | null>(null);
     const history = useRef(new HistoryStack(12));
+    const currentStrokePath = useRef<Point[]>([]); // Mevcut stroke için path biriktir
+    const strokeSnapshot = useRef<{ view: ImageData; mask: ImageData } | null>(null); // Stroke başlamadan önceki durum
 
     // 1) file -> img
     useEffect(() => {
@@ -84,7 +85,19 @@ export function useCanvasController() {
         if (!img || !viewCanvasRef.current || !maskCanvasRef.current) return;
         e.currentTarget.setPointerCapture(e.pointerId);
         isDrawing.current = true;
-        lastPt.current = getLocalXY(e.currentTarget, e);
+        const pt = getLocalXY(e.currentTarget, e);
+        lastPt.current = pt;
+        
+        // Stroke başlamadan önceki durumu kaydet
+        const vctx = viewCanvasRef.current.getContext("2d")!;
+        const mctx = maskCanvasRef.current.getContext("2d")!;
+        strokeSnapshot.current = {
+            view: vctx.getImageData(0, 0, viewCanvasRef.current.width, viewCanvasRef.current.height),
+            mask: mctx.getImageData(0, 0, maskCanvasRef.current.width, maskCanvasRef.current.height)
+        };
+        
+        // Path'i başlat
+        currentStrokePath.current = [pt];
         drawStep(e);
     }
 
@@ -96,7 +109,12 @@ export function useCanvasController() {
     function handleUp(e: React.PointerEvent<HTMLCanvasElement>) {
         if (!img || !maskCanvasRef.current) return;
         isDrawing.current = false;
+        
+        // Path'i temizle
+        currentStrokePath.current = [];
+        strokeSnapshot.current = null;
         lastPt.current = null;
+        
         e.currentTarget.releasePointerCapture(e.pointerId);
 
         // snapshot (undo için)
@@ -110,8 +128,17 @@ export function useCanvasController() {
         const pt = getLocalXY(v, e);
         const isDrawMode = mode === "draw";
         
-        drawOnView(vctx, lastPt.current, pt, brushSize, isDrawMode);
-        drawOnMask(mctx, lastPt.current, pt, brushSize, isDrawMode);
+        // Path'e yeni noktayı ekle
+        currentStrokePath.current.push(pt);
+        
+        // Stroke başlamadan önceki durumu geri yükle
+        if (strokeSnapshot.current) {
+            vctx.putImageData(strokeSnapshot.current.view, 0, 0);
+            mctx.putImageData(strokeSnapshot.current.mask, 0, 0);
+        }
+        
+        // Tüm path'i tek bir stroke olarak çiz (üst üste binme olmaz)
+        drawCompletePath(vctx, mctx, currentStrokePath.current, brushSize, isDrawMode);
         
         // Erase modunda mask'tan silme yapıldıktan sonra viewCanvas'ı güncelle
         if (!isDrawMode && img) {
@@ -124,6 +151,82 @@ export function useCanvasController() {
         }
         
         lastPt.current = pt;
+    }
+    
+    function drawCompletePath(
+        vctx: CanvasRenderingContext2D,
+        mctx: CanvasRenderingContext2D,
+        path: Point[],
+        size: number,
+        isDrawMode: boolean
+    ) {
+        if (path.length < 1) return;
+        
+        // View canvas için
+        if (isDrawMode) {
+            vctx.globalCompositeOperation = "source-over";
+            vctx.lineCap = "round";
+            vctx.lineJoin = "round";
+            vctx.lineWidth = size;
+            vctx.strokeStyle = "rgba(255,255,255,0.4)";
+            vctx.fillStyle = "rgba(255,255,255,0.4)";
+            
+            vctx.beginPath();
+            if (path.length === 1) {
+                // Tek nokta için circle
+                vctx.arc(path[0].x, path[0].y, size / 2, 0, Math.PI * 2);
+                vctx.fill();
+            } else {
+                // Tüm path'i tek bir stroke olarak çiz
+                vctx.moveTo(path[0].x, path[0].y);
+                for (let i = 1; i < path.length; i++) {
+                    vctx.lineTo(path[i].x, path[i].y);
+                }
+                vctx.stroke();
+            }
+        }
+        // Erase modunda view canvas'a dokunmuyoruz, sadece mask'tan siliyoruz
+        
+        // Mask canvas için
+        if (isDrawMode) {
+            mctx.globalCompositeOperation = "source-over";
+            mctx.lineCap = "round";
+            mctx.lineJoin = "round";
+            mctx.lineWidth = size;
+            mctx.strokeStyle = "white";
+            
+            mctx.beginPath();
+            if (path.length === 1) {
+                mctx.arc(path[0].x, path[0].y, size / 2, 0, Math.PI * 2);
+                mctx.fill();
+            } else {
+                mctx.moveTo(path[0].x, path[0].y);
+                for (let i = 1; i < path.length; i++) {
+                    mctx.lineTo(path[i].x, path[i].y);
+                }
+                mctx.stroke();
+            }
+        } else {
+            // Erase mode
+            mctx.globalCompositeOperation = "destination-out";
+            mctx.lineCap = "round";
+            mctx.lineJoin = "round";
+            mctx.lineWidth = size;
+            mctx.strokeStyle = "black";
+            
+            mctx.beginPath();
+            if (path.length === 1) {
+                mctx.arc(path[0].x, path[0].y, size / 2, 0, Math.PI * 2);
+                mctx.fill();
+            } else {
+                mctx.moveTo(path[0].x, path[0].y);
+                for (let i = 1; i < path.length; i++) {
+                    mctx.lineTo(path[i].x, path[i].y);
+                }
+                mctx.stroke();
+            }
+            mctx.globalCompositeOperation = "source-over";
+        }
     }
 
     function clearAllAction() {
