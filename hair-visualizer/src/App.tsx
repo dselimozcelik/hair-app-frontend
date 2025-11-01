@@ -27,6 +27,7 @@ export default function App() {
         maskCanvasRef={d.maskCanvasRef}
         width={d.viewport.width}
         height={d.viewport.height}
+        brushSize={d.brushSize}
         onDown={d.handleDown}
         onMove={d.handleMove}
         onUp={d.handleUp}

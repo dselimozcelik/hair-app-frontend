@@ -33,8 +33,11 @@ export function drawOnView(
     size: number,
     isDrawMode: boolean
 ) {
+    // Erase modunda viewCanvas'a çizim yapılmaz, sadece mask'tan silme yapılır
+    if (!isDrawMode) return;
+    
     viewCtx.globalCompositeOperation = "source-over";
-    const color = isDrawMode ? "rgba(255,255,255,0.9)" : "rgba(255,0,0,0.9)";
+    const color = "rgba(255,255,255,0.9)";
     drawStroke(viewCtx, from, to, size, color);
 }
 

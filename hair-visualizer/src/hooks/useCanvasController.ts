@@ -6,7 +6,7 @@ import { sizeCanvases, drawBaseImage, resetMask, clearAll, syncViewFromMask } fr
 import type { CanvasPair } from "../core/canvasPair";
 import { drawOnView, drawOnMask } from "../core/drawEngine";
 import { HistoryStack } from "../core/history";
-import { downloadMask } from "../core/exporter";
+import { downloadMask, createMaskFromView } from "../core/exporter";
 import type { BrushMode, Viewport } from "../types";
 
 type Point = { x: number; y: number };
@@ -108,8 +108,21 @@ export function useCanvasController() {
         const v = viewCanvasRef.current!, m = maskCanvasRef.current!;
         const vctx = v.getContext("2d")!, mctx = m.getContext("2d")!;
         const pt = getLocalXY(v, e);
-        drawOnView(vctx, lastPt.current, pt, brushSize, mode === "draw");
-        drawOnMask(mctx, lastPt.current, pt, brushSize, mode === "draw");
+        const isDrawMode = mode === "draw";
+        
+        drawOnView(vctx, lastPt.current, pt, brushSize, isDrawMode);
+        drawOnMask(mctx, lastPt.current, pt, brushSize, isDrawMode);
+        
+        // Erase modunda mask'tan silme yapıldıktan sonra viewCanvas'ı güncelle
+        if (!isDrawMode && img) {
+            syncViewFromMask(
+                { view: v, mask: m },
+                img,
+                viewport.width,
+                viewport.height
+            );
+        }
+        
         lastPt.current = pt;
     }
 
@@ -123,7 +136,18 @@ export function useCanvasController() {
     }
 
     function exportMask() {
-        if (!maskCanvasRef.current) return;
+        if (!viewCanvasRef.current || !maskCanvasRef.current || !img) return;
+        
+        // View canvas'taki çizimlerden mask oluştur
+        createMaskFromView(
+            viewCanvasRef.current,
+            maskCanvasRef.current,
+            img,
+            viewport.width,
+            viewport.height
+        );
+        
+        // Oluşturulan mask'ı indir
         downloadMask(maskCanvasRef.current);
     }
 
