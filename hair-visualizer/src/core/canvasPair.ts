@@ -25,3 +25,17 @@ export function clearAll(pair: CanvasPair, img: HTMLImageElement, w: number, h: 
     drawBaseImage(pair, img, w, h);
     resetMask(pair, w, h);
 }
+
+// Mask'taki çizimleri viewCanvas'a yansıtır
+export function syncViewFromMask(pair: CanvasPair, img: HTMLImageElement, w: number, h: number) {
+    const vctx = pair.view.getContext("2d")!;
+    
+    // ViewCanvas'ı temel resimle doldur
+    drawBaseImage(pair, img, w, h);
+    
+    // Mask'taki beyaz çizgileri viewCanvas'a çiz
+    // Sadece beyaz pikselleri çizmek için "lighten" mode kullan
+    vctx.globalCompositeOperation = "lighten";
+    vctx.drawImage(pair.mask, 0, 0);
+    vctx.globalCompositeOperation = "source-over";
+}

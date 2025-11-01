@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadImageFromFile } from "../core/imageLoader";
 import { fitContain } from "../core/viewport";
-import { sizeCanvases, drawBaseImage, resetMask, clearAll } from "../core/canvasPair";
+import { sizeCanvases, drawBaseImage, resetMask, clearAll, syncViewFromMask } from "../core/canvasPair";
 import type { CanvasPair } from "../core/canvasPair";
 import { drawOnView, drawOnMask } from "../core/drawEngine";
 import { HistoryStack } from "../core/history";
@@ -69,6 +69,10 @@ export function useCanvasController() {
         sizeCanvases(pair, w, h);
         drawBaseImage(pair, image, w, h);
         resetMask(pair, w, h);
+        
+        // İlk durum için snapshot al (undo/redo için)
+        const mctx = maskCanvasRef.current!.getContext("2d")!;
+        history.current.snapshot(mctx, w, h);
     }
 
     function getLocalXY(canvas: HTMLCanvasElement, e: React.PointerEvent) {
@@ -112,6 +116,10 @@ export function useCanvasController() {
     function clearAllAction() {
         if (!img || !viewCanvasRef.current || !maskCanvasRef.current) return;
         clearAll({ view: viewCanvasRef.current, mask: maskCanvasRef.current }, img, viewport.width, viewport.height);
+        
+        // Clear sonrası snapshot al (undo/redo için)
+        const mctx = maskCanvasRef.current.getContext("2d")!;
+        history.current.snapshot(mctx, maskCanvasRef.current.width, maskCanvasRef.current.height);
     }
 
     function exportMask() {
@@ -120,26 +128,29 @@ export function useCanvasController() {
     }
 
     function undo() {
-        if (!maskCanvasRef.current) return;
+        if (!maskCanvasRef.current || !viewCanvasRef.current || !img) return;
         const mctx = maskCanvasRef.current.getContext("2d")!;
-        history.current.undo(mctx, maskCanvasRef.current.width, maskCanvasRef.current.height);
-        // viewCanvas'ı tekrar resimle doldur
-        if (img && viewCanvasRef.current) {
-            const vctx = viewCanvasRef.current.getContext("2d")!;
-            vctx.clearRect(0, 0, viewport.width, viewport.height);
-            vctx.drawImage(img, 0, 0, viewport.width, viewport.height);
-        }
+        history.current.undo(mctx);
+        // ViewCanvas'ı mask'a göre güncelle
+        syncViewFromMask(
+            { view: viewCanvasRef.current, mask: maskCanvasRef.current },
+            img,
+            viewport.width,
+            viewport.height
+        );
     }
 
     function redo() {
-        if (!maskCanvasRef.current) return;
+        if (!maskCanvasRef.current || !viewCanvasRef.current || !img) return;
         const mctx = maskCanvasRef.current.getContext("2d")!;
         history.current.redo(mctx);
-        if (img && viewCanvasRef.current) {
-            const vctx = viewCanvasRef.current.getContext("2d")!;
-            vctx.clearRect(0, 0, viewport.width, viewport.height);
-            vctx.drawImage(img, 0, 0, viewport.width, viewport.height);
-        }
+        // ViewCanvas'ı mask'a göre güncelle
+        syncViewFromMask(
+            { view: viewCanvasRef.current, mask: maskCanvasRef.current },
+            img,
+            viewport.width,
+            viewport.height
+        );
     }
 
     return {
