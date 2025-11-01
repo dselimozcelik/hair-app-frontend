@@ -1,9 +1,9 @@
+import { useCanvasController } from "./hooks/useCanvasController";
 import Toolbar from "./components/Toolbar";
 import CanvasStage from "./components/CanvasStage";
-import { useCanvasDrawing } from "./hooks/useCanvasDrawing";
 
 export default function App() {
-  const d = useCanvasDrawing();
+  const d = useCanvasController();
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -17,6 +17,8 @@ export default function App() {
         onMode={(m) => d.setMode(m)}
         onClear={d.clearAll}
         onExport={d.exportMask}
+        onUndo={d.undo}
+        onRedo={d.redo}
       />
 
       <CanvasStage
@@ -25,9 +27,9 @@ export default function App() {
         maskCanvasRef={d.maskCanvasRef}
         width={d.viewport.width}
         height={d.viewport.height}
-        onDown={d.handlePointerDown}
-        onMove={d.handlePointerMove}
-        onUp={d.handlePointerUp}
+        onDown={d.handleDown}
+        onMove={d.handleMove}
+        onUp={d.handleUp}
         hasImage={!!d.img}
       />
     </div>
